@@ -224,11 +224,19 @@ export default class EventCalendarPlugin extends Plugin {
 			}
 			.mini-other-month {
 				color: var(--text-muted);
+				opacity: 0.5;
+				background-color: var(--background-modifier-border);
+				text-decoration: none;
 			}
 			.event-calendar-mini-has-events {
 				background-color: var(--interactive-accent-hover);
 				color: var(--text-on-accent);
 				font-weight: bold;
+			}
+			
+			.event-calendar-mini-empty-cell {
+				background-color: var(--background-secondary-alt);
+				border: none;
 			}
 			
 			/* Legend styles */
@@ -364,9 +372,6 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			console.log(`[Event Calendar] Notes found:`, allFiles.map(f => f.path));
 		}
 
-		// Create a map for consistent colors
-		const colorMap = new Map<string, string>();
-
 		// Filter files with #trip tag
 		const filteredFiles = allFiles.filter((file: TFile) => {
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -413,14 +418,8 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		// Store filtered files for debug info
 		this.matchedNotes = filteredFiles;
 
-		// Generate colors for each unique event title
-		filteredFiles.forEach(file => {
-			if (!colorMap.has(file.basename)) {
-				colorMap.set(file.basename, this.generateColor(file.basename));
-			}
-		});
-
-		// Extract dates and create events
+		// Extract dates and create events (without colors for now)
+		const eventsWithoutColors: Event[] = [];
 		for (const file of filteredFiles) {
 			const cache = this.app.metadataCache.getFileCache(file);
 			if (cache?.frontmatter) {
@@ -449,13 +448,13 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 						}
 					}
 					
-					events.push({
+					eventsWithoutColors.push({
 						title: file.basename,
 						startDate,
 						endDate,
 						path: file.path,
 						note: file,
-						color: colorMap.get(file.basename) || '#1976d2' // Fallback color
+						color: '#1976d2' // Temporary default color
 					});
 				} else if (this.plugin.settings.debugMode) {
 					console.log(`[Event Calendar] File ${file.path} does not have required date fields`);
@@ -466,7 +465,41 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			}
 		}
 		
-		return events;
+		// Now assign rainbow colors to events
+		// First group events by year
+		const eventsByYear = new Map<number, Event[]>();
+		for (const event of eventsWithoutColors) {
+			const year = event.startDate.getFullYear();
+			if (!eventsByYear.has(year)) {
+				eventsByYear.set(year, []);
+			}
+			eventsByYear.get(year)?.push(event);
+		}
+		
+		// Assign colors for each year group
+		eventsByYear.forEach((yearEvents, year) => {
+			// Get unique titles in this year
+			const uniqueTitles = new Set<string>();
+			yearEvents.forEach(event => uniqueTitles.add(event.title));
+			
+			// Create an array from the unique titles to assign rainbow colors
+			const uniqueTitlesArray = Array.from(uniqueTitles);
+			const rainbowColors = this.generateRainbowColors(uniqueTitlesArray.length);
+			
+			// Create a map of title -> color for this year
+			const colorMap = new Map<string, string>();
+			uniqueTitlesArray.forEach((title, index) => {
+				colorMap.set(title, rainbowColors[index]);
+			});
+			
+			// Assign colors to all events in this year
+			yearEvents.forEach(event => {
+				event.color = colorMap.get(event.title) || '#1976d2'; // Use the mapped color or fallback
+			});
+		});
+		
+		// Return all events with assigned colors
+		return eventsWithoutColors;
 	}
 
 	parseDate(dateStr: any): Date | null {
@@ -759,37 +792,43 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 				
 				// Create the day cell
 				const dayCell = row.createDiv({
-					cls: `event-calendar-mini-cell${isCurrentMonth ? '' : ' mini-other-month'}`
+					cls: 'event-calendar-mini-cell'
 				});
 				
-				// Add the day number
-				dayCell.setText(currentDate.getDate().toString());
-				
-				// Check if this day has events
-				const eventsForDay = this.getEventsForDay(currentDate);
-				if (eventsForDay.length > 0) {
-					dayCell.addClass('event-calendar-mini-has-events');
+				// Only show content for days in the current month
+				if (isCurrentMonth) {
+					// Add the day number
+					dayCell.setText(currentDate.getDate().toString());
 					
-					// Use the color of the first event for this day
-					if (eventsForDay[0].color) {
-						dayCell.style.backgroundColor = eventsForDay[0].color;
+					// Check if this day has events
+					const eventsForDay = this.getEventsForDay(currentDate);
+					if (eventsForDay.length > 0) {
+						dayCell.addClass('event-calendar-mini-has-events');
+						
+						// Use the color of the first event for this day
+						if (eventsForDay[0].color) {
+							dayCell.style.backgroundColor = eventsForDay[0].color;
+						}
+						
+						// If multiple events, add a small indicator
+						if (eventsForDay.length > 1) {
+							dayCell.setAttribute('title', `${eventsForDay.length} events`);
+						} else {
+							dayCell.setAttribute('title', eventsForDay[0].title);
+						}
 					}
 					
-					// If multiple events, add a small indicator
-					if (eventsForDay.length > 1) {
-						dayCell.setAttribute('title', `${eventsForDay.length} events`);
-					} else {
-						dayCell.setAttribute('title', eventsForDay[0].title);
-					}
+					// Make the cell clickable to switch to month view for this month
+					dayCell.addEventListener('click', () => {
+						this.monthDate = new Date(year, month, 1);
+						this.plugin.settings.defaultView = 'month';
+						this.plugin.saveSettings();
+						this.renderCalendar();
+					});
+				} else {
+					// For days not in current month, leave cell empty but maintain grid structure
+					dayCell.addClass('event-calendar-mini-empty-cell');
 				}
-				
-				// Make the cell clickable to switch to month view for this month
-				dayCell.addEventListener('click', () => {
-					this.monthDate = new Date(year, month, 1);
-					this.plugin.settings.defaultView = 'month';
-					this.plugin.saveSettings();
-					this.renderCalendar();
-				});
 				
 				// Move to next day
 				currentDate.setDate(currentDate.getDate() + 1);
@@ -922,24 +961,22 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		}
 	}
 
-	// Generate a consistent color based on the input string
-	generateColor(input: string): string {
-		// Hash the string to get a number
-		let hash = 0;
-		for (let i = 0; i < input.length; i++) {
-			hash = input.charCodeAt(i) + ((hash << 5) - hash);
+	// Generate a set of rainbow colors
+	generateRainbowColors(count: number): string[] {
+		const colors: string[] = [];
+		
+		for (let i = 0; i < count; i++) {
+			// Calculate hue (0-360) to get full spectrum
+			const hue = (i * 360 / count) % 360;
+			
+			// Use more vibrant saturation and lightness for rainbow effect
+			const saturation = 95; // Increased from 90 for more vivid colors
+			const lightness = 60;  // Adjusted for better visibility and vibrancy
+			
+			colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
 		}
 		
-		// Convert to hexadecimal format and ensure good contrast
-		let color = '#';
-		for (let i = 0; i < 3; i++) {
-			const value = (hash >> (i * 8)) & 0xFF;
-			// Ensure colors are not too light (add 64 to ensure minimum brightness)
-			const adjustedValue = Math.max(value, 64);
-			color += adjustedValue.toString(16).padStart(2, '0');
-		}
-		
-		return color;
+		return colors;
 	}
 
 	// Render a legend showing all event types and their colors
@@ -996,12 +1033,14 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 	
 	// Get events visible in the current view (month or year)
 	getVisibleEvents(): Event[] {
+		let visibleEvents: Event[];
+		
 		if (this.plugin.settings.defaultView === 'month') {
 			// For month view, show only events in the currently displayed month
 			const year = this.monthDate.getFullYear();
 			const month = this.monthDate.getMonth();
 			
-			return this.events.filter(event => {
+			visibleEvents = this.events.filter(event => {
 				// Check if event start date or end date falls within this month
 				const startYear = event.startDate.getFullYear();
 				const startMonth = event.startDate.getMonth();
@@ -1019,7 +1058,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			// For year view, show only events in the currently displayed year
 			const year = this.monthDate.getFullYear();
 			
-			return this.events.filter(event => {
+			visibleEvents = this.events.filter(event => {
 				// Check if event start date or end date falls within this year
 				const startYear = event.startDate.getFullYear();
 				const endYear = event.endDate ? event.endDate.getFullYear() : startYear;
@@ -1028,6 +1067,47 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 				return (startYear <= year && endYear >= year);
 			});
 		}
+		
+		// Reassign colors based on the current view
+		this.assignColorsToVisibleEvents(visibleEvents);
+		
+		return visibleEvents;
+	}
+	
+	// Assign colors to events based on the current view
+	assignColorsToVisibleEvents(events: Event[]): void {
+		// Group events by year
+		const eventsByYear = new Map<number, Event[]>();
+		
+		events.forEach(event => {
+			const year = event.startDate.getFullYear();
+			if (!eventsByYear.has(year)) {
+				eventsByYear.set(year, []);
+			}
+			eventsByYear.get(year)?.push(event);
+		});
+		
+		// Assign colors for each year group
+		eventsByYear.forEach((yearEvents, year) => {
+			// Get unique titles in this year
+			const uniqueTitles = new Set<string>();
+			yearEvents.forEach(event => uniqueTitles.add(event.title));
+			
+			// Create an array from the unique titles to assign rainbow colors
+			const uniqueTitlesArray = Array.from(uniqueTitles);
+			const rainbowColors = this.generateRainbowColors(uniqueTitlesArray.length);
+			
+			// Create a map of title -> color for this year
+			const colorMap = new Map<string, string>();
+			uniqueTitlesArray.forEach((title, index) => {
+				colorMap.set(title, rainbowColors[index]);
+			});
+			
+			// Assign colors to all events in this year
+			yearEvents.forEach(event => {
+				event.color = colorMap.get(event.title) || '#1976d2'; // Use the mapped color or fallback
+			});
+		});
 	}
 }
 
