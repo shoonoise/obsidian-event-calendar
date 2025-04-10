@@ -3,7 +3,7 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 // Remember to rename these classes and interfaces!
 
 interface EventCalendarSettings {
-	defaultView: string; // 'month', 'week', etc.
+	defaultView: string; // 'month', 'year'
 	firstDayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
 	debugMode: boolean; // Show debug information
 	testMode: boolean; // Enable test mode to show all notes and their metadata
@@ -22,6 +22,7 @@ interface Event {
 	endDate: Date | null;
 	path: string;
 	note: TFile;
+	color: string; // Store the color for the event
 }
 
 export default class EventCalendarPlugin extends Plugin {
@@ -79,21 +80,33 @@ export default class EventCalendarPlugin extends Plugin {
 				display: flex;
 				justify-content: space-between;
 				align-items: center;
-				margin-bottom: 1em;
+				margin-bottom: 1.5em;
+				padding: 6px 4px;
+				background: var(--background-secondary-alt);
+				border-radius: 6px;
 			}
 			.event-calendar-title {
 				font-size: 1.2em;
 				font-weight: bold;
+				padding: 0 15px;
+				flex: 1;
+				text-align: center;
 			}
 			.event-calendar-nav-btn {
 				background: var(--interactive-normal);
 				border: none;
 				border-radius: 4px;
-				padding: 4px 10px;
+				padding: 6px 12px;
+				margin: 0 4px;
 				cursor: pointer;
+				font-weight: bold;
 			}
 			.event-calendar-nav-btn:hover {
 				background: var(--interactive-hover);
+				color: var(--text-accent);
+			}
+			.event-calendar-view-toggle {
+				margin-left: auto;
 			}
 			.event-calendar-grid {
 				border: 1px solid var(--background-modifier-border);
@@ -158,6 +171,106 @@ export default class EventCalendarPlugin extends Plugin {
 			.other-month {
 				background: var(--background-modifier-cover);
 				color: var(--text-muted);
+			}
+			
+			/* Year view styles */
+			.event-calendar-year-grid {
+				display: flex;
+				flex-direction: column;
+				gap: 20px;
+			}
+			.event-calendar-year-row {
+				display: flex;
+				flex-direction: row;
+				gap: 20px;
+				width: 100%;
+			}
+			.event-calendar-year-month {
+				flex: 1;
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				padding: 8px;
+			}
+			.event-calendar-year-month-title {
+				text-align: center;
+				margin: 0 0 8px 0;
+				font-size: 0.9em;
+			}
+			.event-calendar-mini-grid {
+				width: 100%;
+			}
+			.event-calendar-mini-row {
+				display: flex;
+				flex-direction: row;
+				width: 100%;
+			}
+			.event-calendar-mini-cell {
+				flex: 1;
+				text-align: center;
+				font-size: 0.7em;
+				padding: 2px 0;
+				cursor: pointer;
+				border-radius: 2px;
+			}
+			.event-calendar-mini-cell:hover {
+				background: var(--background-modifier-hover);
+			}
+			.event-calendar-mini-header {
+				font-weight: bold;
+				margin-bottom: 2px;
+			}
+			.event-calendar-mini-day-name {
+				cursor: default;
+			}
+			.mini-other-month {
+				color: var(--text-muted);
+			}
+			.event-calendar-mini-has-events {
+				background-color: var(--interactive-accent-hover);
+				color: var(--text-on-accent);
+				font-weight: bold;
+			}
+			
+			/* Legend styles */
+			.event-calendar-legend {
+				margin-bottom: 1.5em;
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				padding: 10px;
+				background: var(--background-primary);
+			}
+			.event-calendar-legend-title {
+				margin: 0 0 10px 0;
+				font-size: 1em;
+				text-align: center;
+			}
+			.event-calendar-legend-list {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 10px;
+				justify-content: center;
+			}
+			.event-calendar-legend-item {
+				display: flex;
+				align-items: center;
+				cursor: pointer;
+				padding: 4px 8px;
+				border-radius: 4px;
+				margin: 2px;
+				background: var(--background-secondary-alt);
+			}
+			.event-calendar-legend-item:hover {
+				background: var(--background-modifier-hover);
+			}
+			.event-calendar-legend-swatch {
+				width: 15px;
+				height: 15px;
+				border-radius: 3px;
+				margin-right: 5px;
+				flex-shrink: 0;
+			}
+			.event-calendar-legend-label {
+				font-size: 0.9em;
 			}
 			
 			/* Debug styles */
@@ -251,6 +364,9 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			console.log(`[Event Calendar] Notes found:`, allFiles.map(f => f.path));
 		}
 
+		// Create a map for consistent colors
+		const colorMap = new Map<string, string>();
+
 		// Filter files with #trip tag
 		const filteredFiles = allFiles.filter((file: TFile) => {
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -297,6 +413,13 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		// Store filtered files for debug info
 		this.matchedNotes = filteredFiles;
 
+		// Generate colors for each unique event title
+		filteredFiles.forEach(file => {
+			if (!colorMap.has(file.basename)) {
+				colorMap.set(file.basename, this.generateColor(file.basename));
+			}
+		});
+
 		// Extract dates and create events
 		for (const file of filteredFiles) {
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -331,7 +454,8 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 						startDate,
 						endDate,
 						path: file.path,
-						note: file
+						note: file,
+						color: colorMap.get(file.basename) || '#1976d2' // Fallback color
 					});
 				} else if (this.plugin.settings.debugMode) {
 					console.log(`[Event Calendar] File ${file.path} does not have required date fields`);
@@ -379,7 +503,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		
 		const titleEl = navEl.createEl('span', {
 			cls: 'event-calendar-title',
-			text: this.formatMonthTitle(this.monthDate)
+			text: this.formatCalendarTitle()
 		});
 		
 		const nextBtn = navEl.createEl('button', {
@@ -387,23 +511,55 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			cls: 'event-calendar-nav-btn'
 		});
 		
+		// Add view toggle button
+		const viewToggleBtn = navEl.createEl('button', {
+			text: this.plugin.settings.defaultView === 'month' ? 'Year View' : 'Month View',
+			cls: 'event-calendar-nav-btn event-calendar-view-toggle'
+		});
+		
 		// Navigation event handlers
 		prevBtn.addEventListener('click', () => {
-			this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() - 1, 1);
+			if (this.plugin.settings.defaultView === 'month') {
+				this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() - 1, 1);
+			} else {
+				this.monthDate = new Date(this.monthDate.getFullYear() - 1, 0, 1);
+			}
 			this.renderCalendar();
 		});
 		
 		nextBtn.addEventListener('click', () => {
-			this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() + 1, 1);
+			if (this.plugin.settings.defaultView === 'month') {
+				this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() + 1, 1);
+			} else {
+				this.monthDate = new Date(this.monthDate.getFullYear() + 1, 0, 1);
+			}
 			this.renderCalendar();
 		});
 		
-		// Render month grid
-		this.renderMonthGrid(calendarEl);
+		// View toggle handler
+		viewToggleBtn.addEventListener('click', () => {
+			this.plugin.settings.defaultView = this.plugin.settings.defaultView === 'month' ? 'year' : 'month';
+			this.plugin.saveSettings();
+			this.renderCalendar();
+		});
+		
+		// Add the legend first
+		this.renderLegend(calendarEl);
+		
+		// Render appropriate view
+		if (this.plugin.settings.defaultView === 'month') {
+			this.renderMonthGrid(calendarEl);
+		} else {
+			this.renderYearGrid(calendarEl);
+		}
 	}
 
-	formatMonthTitle(date: Date): string {
-		return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+	formatCalendarTitle(): string {
+		if (this.plugin.settings.defaultView === 'month') {
+			return this.monthDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+		} else {
+			return this.monthDate.getFullYear().toString();
+		}
 	}
 
 	renderMonthGrid(containerEl: HTMLElement) {
@@ -487,6 +643,9 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 						cls: 'event-calendar-event'
 					});
 					
+					// Set the background color
+					eventEl.style.backgroundColor = event.color;
+					
 					// Add the event title
 					eventEl.createDiv({
 						cls: 'event-calendar-event-title',
@@ -503,20 +662,145 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 	}
 
 	getEventsForDay(day: Date): Event[] {
+		// Create a date at midnight for proper comparison
+		const checkDate = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+		
 		return this.events.filter(event => {
-			const startDate = event.startDate;
-			const endDate = event.endDate || event.startDate;
+			// Create dates at midnight for proper comparison
+			const startDate = new Date(event.startDate.getFullYear(), event.startDate.getMonth(), event.startDate.getDate());
+			const endDate = event.endDate ? 
+				new Date(event.endDate.getFullYear(), event.endDate.getMonth(), event.endDate.getDate()) : 
+				startDate;
 			
 			// Check if the day is between the start and end dates (inclusive)
-			return (
-				startDate.getDate() <= day.getDate() &&
-				day.getDate() <= endDate.getDate() &&
-				startDate.getMonth() <= day.getMonth() &&
-				day.getMonth() <= endDate.getMonth() &&
-				startDate.getFullYear() <= day.getFullYear() &&
-				day.getFullYear() <= endDate.getFullYear()
-			);
+			// Using timestamp comparison for accuracy
+			return checkDate.getTime() >= startDate.getTime() && 
+				   checkDate.getTime() <= endDate.getTime();
 		});
+	}
+
+	renderYearGrid(containerEl: HTMLElement) {
+		const yearGrid = containerEl.createDiv({
+			cls: 'event-calendar-year-grid'
+		});
+		
+		const year = this.monthDate.getFullYear();
+		const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+							'July', 'August', 'September', 'October', 'November', 'December'];
+		
+		// Create a 3x4 grid of months
+		for (let row = 0; row < 4; row++) {
+			const monthRow = yearGrid.createDiv({
+				cls: 'event-calendar-year-row'
+			});
+			
+			for (let col = 0; col < 3; col++) {
+				const monthIndex = row * 3 + col;
+				
+				// Create a container for this month
+				const monthCell = monthRow.createDiv({
+					cls: 'event-calendar-year-month'
+				});
+				
+				// Add month header
+				monthCell.createEl('h4', {
+					text: monthNames[monthIndex],
+					cls: 'event-calendar-year-month-title'
+				});
+				
+				// Create mini month grid
+				this.renderMiniMonth(monthCell, year, monthIndex);
+			}
+		}
+	}
+
+	renderMiniMonth(containerEl: HTMLElement, year: number, month: number) {
+		const gridEl = containerEl.createDiv({
+			cls: 'event-calendar-mini-grid'
+		});
+		
+		// Create header row with day names
+		const headerRow = gridEl.createDiv({
+			cls: 'event-calendar-mini-row event-calendar-mini-header'
+		});
+		
+		const dayNameAbbrev = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+		const firstDayOfWeek = this.plugin.settings.firstDayOfWeek;
+		
+		for (let i = 0; i < 7; i++) {
+			const dayIndex = (i + firstDayOfWeek) % 7;
+			headerRow.createDiv({
+				cls: 'event-calendar-mini-cell event-calendar-mini-day-name',
+				text: dayNameAbbrev[dayIndex]
+			});
+		}
+		
+		// Calculate the first day to display
+		const firstDayOfMonth = new Date(year, month, 1);
+		let startDate = new Date(firstDayOfMonth);
+		const dayOfWeek = startDate.getDay();
+		
+		// Adjust to start on the correct first day of the week
+		const diff = (dayOfWeek - firstDayOfWeek + 7) % 7;
+		startDate.setDate(startDate.getDate() - diff);
+		
+		// Calculate days in month and last day of month
+		const daysInMonth = new Date(year, month + 1, 0).getDate();
+		
+		// Render weeks (at most 6)
+		let currentDate = new Date(startDate);
+		for (let week = 0; week < 6; week++) {
+			const row = gridEl.createDiv({
+				cls: 'event-calendar-mini-row'
+			});
+			
+			for (let day = 0; day < 7; day++) {
+				const isCurrentMonth = currentDate.getMonth() === month;
+				
+				// Create the day cell
+				const dayCell = row.createDiv({
+					cls: `event-calendar-mini-cell${isCurrentMonth ? '' : ' mini-other-month'}`
+				});
+				
+				// Add the day number
+				dayCell.setText(currentDate.getDate().toString());
+				
+				// Check if this day has events
+				const eventsForDay = this.getEventsForDay(currentDate);
+				if (eventsForDay.length > 0) {
+					dayCell.addClass('event-calendar-mini-has-events');
+					
+					// Use the color of the first event for this day
+					if (eventsForDay[0].color) {
+						dayCell.style.backgroundColor = eventsForDay[0].color;
+					}
+					
+					// If multiple events, add a small indicator
+					if (eventsForDay.length > 1) {
+						dayCell.setAttribute('title', `${eventsForDay.length} events`);
+					} else {
+						dayCell.setAttribute('title', eventsForDay[0].title);
+					}
+				}
+				
+				// Make the cell clickable to switch to month view for this month
+				dayCell.addEventListener('click', () => {
+					this.monthDate = new Date(year, month, 1);
+					this.plugin.settings.defaultView = 'month';
+					this.plugin.saveSettings();
+					this.renderCalendar();
+				});
+				
+				// Move to next day
+				currentDate.setDate(currentDate.getDate() + 1);
+			}
+			
+			// If we've gone past the end of the month and rendered at least 4 weeks
+			// we can stop to save space
+			if (currentDate.getMonth() !== month && week >= 3) {
+				break;
+			}
+		}
 	}
 
 	renderDebugInfo() {
@@ -637,6 +921,114 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			}
 		}
 	}
+
+	// Generate a consistent color based on the input string
+	generateColor(input: string): string {
+		// Hash the string to get a number
+		let hash = 0;
+		for (let i = 0; i < input.length; i++) {
+			hash = input.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		
+		// Convert to hexadecimal format and ensure good contrast
+		let color = '#';
+		for (let i = 0; i < 3; i++) {
+			const value = (hash >> (i * 8)) & 0xFF;
+			// Ensure colors are not too light (add 64 to ensure minimum brightness)
+			const adjustedValue = Math.max(value, 64);
+			color += adjustedValue.toString(16).padStart(2, '0');
+		}
+		
+		return color;
+	}
+
+	// Render a legend showing all event types and their colors
+	renderLegend(containerEl: HTMLElement) {
+		// Get events for the current view
+		const visibleEvents = this.getVisibleEvents();
+		
+		// Skip legend if no events
+		if (visibleEvents.length === 0) return;
+		
+		const legendContainer = containerEl.createDiv({
+			cls: 'event-calendar-legend'
+		});
+		
+		legendContainer.createEl('h4', {
+			text: 'Legend',
+			cls: 'event-calendar-legend-title'
+		});
+		
+		// Get unique events by title
+		const uniqueEvents = new Map<string, Event>();
+		visibleEvents.forEach(event => {
+			if (!uniqueEvents.has(event.title)) {
+				uniqueEvents.set(event.title, event);
+			}
+		});
+		
+		// Create the legend items
+		const legendList = legendContainer.createDiv({
+			cls: 'event-calendar-legend-list'
+		});
+		
+		uniqueEvents.forEach(event => {
+			const legendItem = legendList.createDiv({
+				cls: 'event-calendar-legend-item'
+			});
+			
+			const colorSwatch = legendItem.createDiv({
+				cls: 'event-calendar-legend-swatch'
+			});
+			colorSwatch.style.backgroundColor = event.color;
+			
+			legendItem.createDiv({
+				text: event.title,
+				cls: 'event-calendar-legend-label'
+			});
+			
+			// Make clicking on legend items open the note
+			legendItem.addEventListener('click', async () => {
+				await this.app.workspace.getLeaf().openFile(event.note);
+			});
+		});
+	}
+	
+	// Get events visible in the current view (month or year)
+	getVisibleEvents(): Event[] {
+		if (this.plugin.settings.defaultView === 'month') {
+			// For month view, show only events in the currently displayed month
+			const year = this.monthDate.getFullYear();
+			const month = this.monthDate.getMonth();
+			
+			return this.events.filter(event => {
+				// Check if event start date or end date falls within this month
+				const startYear = event.startDate.getFullYear();
+				const startMonth = event.startDate.getMonth();
+				const endYear = event.endDate ? event.endDate.getFullYear() : startYear;
+				const endMonth = event.endDate ? event.endDate.getMonth() : startMonth;
+				
+				// Event is visible if any part of it falls within the displayed month
+				return (
+					// Start date is in this month or before, and end date is in this month or after
+					((startYear < year || (startYear === year && startMonth <= month)) && 
+					 (endYear > year || (endYear === year && endMonth >= month)))
+				);
+			});
+		} else {
+			// For year view, show only events in the currently displayed year
+			const year = this.monthDate.getFullYear();
+			
+			return this.events.filter(event => {
+				// Check if event start date or end date falls within this year
+				const startYear = event.startDate.getFullYear();
+				const endYear = event.endDate ? event.endDate.getFullYear() : startYear;
+				
+				// Event is visible if any part of it falls within the displayed year
+				return (startYear <= year && endYear >= year);
+			});
+		}
+	}
 }
 
 class EventCalendarSettingTab extends PluginSettingTab {
@@ -658,7 +1050,7 @@ class EventCalendarSettingTab extends PluginSettingTab {
 			.setDesc('The default calendar view')
 			.addDropdown(dropdown => dropdown
 				.addOption('month', 'Month')
-				.addOption('week', 'Week')
+				.addOption('year', 'Year')
 				.setValue(this.plugin.settings.defaultView)
 				.onChange(async (value) => {
 					this.plugin.settings.defaultView = value;
