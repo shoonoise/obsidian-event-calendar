@@ -158,7 +158,7 @@ export default class EventCalendarPlugin extends Plugin {
 				padding: 2px 5px;
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
-				border-radius: 3px;
+				border-radius: 0px;
 				font-size: 0.8em;
 				cursor: pointer;
 				overflow: hidden;
@@ -171,6 +171,7 @@ export default class EventCalendarPlugin extends Plugin {
 			.other-month {
 				background: var(--background-modifier-cover);
 				color: var(--text-muted);
+				pointer-events: none; /* Remove hover effect */
 			}
 			
 			/* Year view styles */
@@ -188,7 +189,7 @@ export default class EventCalendarPlugin extends Plugin {
 			.event-calendar-year-month {
 				flex: 1;
 				border: 1px solid var(--background-modifier-border);
-				border-radius: 4px;
+				border-radius: 0px;
 				padding: 8px;
 			}
 			.event-calendar-year-month-title {
@@ -210,7 +211,7 @@ export default class EventCalendarPlugin extends Plugin {
 				font-size: 0.7em;
 				padding: 2px 0;
 				cursor: pointer;
-				border-radius: 2px;
+				border-radius: 0px;
 			}
 			.event-calendar-mini-cell:hover {
 				background: var(--background-modifier-hover);
@@ -227,6 +228,7 @@ export default class EventCalendarPlugin extends Plugin {
 				opacity: 0.5;
 				background-color: var(--background-modifier-border);
 				text-decoration: none;
+				pointer-events: none; /* Remove hover effect */
 			}
 			.event-calendar-mini-has-events {
 				background-color: var(--interactive-accent-hover);
@@ -418,8 +420,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		// Store filtered files for debug info
 		this.matchedNotes = filteredFiles;
 
-		// Extract dates and create events (without colors for now)
-		const eventsWithoutColors: Event[] = [];
+		// Extract dates and create events
 		for (const file of filteredFiles) {
 			const cache = this.app.metadataCache.getFileCache(file);
 			if (cache?.frontmatter) {
@@ -448,8 +449,11 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 						}
 					}
 					
-					eventsWithoutColors.push({
-						title: file.basename,
+					// Use title from frontmatter if available, otherwise use filename
+					const title = frontmatter.title || file.basename;
+					
+					events.push({
+						title,
 						startDate,
 						endDate,
 						path: file.path,
@@ -465,41 +469,10 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			}
 		}
 		
-		// Now assign rainbow colors to events
-		// First group events by year
-		const eventsByYear = new Map<number, Event[]>();
-		for (const event of eventsWithoutColors) {
-			const year = event.startDate.getFullYear();
-			if (!eventsByYear.has(year)) {
-				eventsByYear.set(year, []);
-			}
-			eventsByYear.get(year)?.push(event);
-		}
+		// Assign colors to events
+		this.assignColorsToVisibleEvents(events);
 		
-		// Assign colors for each year group
-		eventsByYear.forEach((yearEvents, year) => {
-			// Get unique titles in this year
-			const uniqueTitles = new Set<string>();
-			yearEvents.forEach(event => uniqueTitles.add(event.title));
-			
-			// Create an array from the unique titles to assign rainbow colors
-			const uniqueTitlesArray = Array.from(uniqueTitles);
-			const rainbowColors = this.generateRainbowColors(uniqueTitlesArray.length);
-			
-			// Create a map of title -> color for this year
-			const colorMap = new Map<string, string>();
-			uniqueTitlesArray.forEach((title, index) => {
-				colorMap.set(title, rainbowColors[index]);
-			});
-			
-			// Assign colors to all events in this year
-			yearEvents.forEach(event => {
-				event.color = colorMap.get(event.title) || '#1976d2'; // Use the mapped color or fallback
-			});
-		});
-		
-		// Return all events with assigned colors
-		return eventsWithoutColors;
+		return events;
 	}
 
 	parseDate(dateStr: any): Date | null {
@@ -576,7 +549,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			this.renderCalendar();
 		});
 		
-		// Add the legend first
+		// Add the legend
 		this.renderLegend(calendarEl);
 		
 		// Render appropriate view
@@ -655,10 +628,10 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 					cls: `event-calendar-cell event-calendar-day${isCurrentMonth ? '' : ' other-month'}`
 				});
 				
-				// Add the day number
+				// Add the day number only if it's the current month
 				dayCell.createDiv({
 					cls: 'event-calendar-day-number',
-					text: date.getDate().toString()
+					text: isCurrentMonth ? date.getDate().toString() : '' // Hide day number for other months
 				});
 				
 				// Container for events
@@ -666,29 +639,32 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 					cls: 'event-calendar-events'
 				});
 				
-				// Get events for this day
-				const eventsForDay = this.getEventsForDay(date);
-				
-				// Process events for this day
-				for (const event of eventsForDay) {
-					// Create the event element
-					const eventEl = eventsContainer.createDiv({
-						cls: 'event-calendar-event'
-					});
+				// Only process events if it's the current month
+				if (isCurrentMonth) {
+					// Get events for this day
+					const eventsForDay = this.getEventsForDay(date);
 					
-					// Set the background color
-					eventEl.style.backgroundColor = event.color;
-					
-					// Add the event title
-					eventEl.createDiv({
-						cls: 'event-calendar-event-title',
-						text: event.title
-					});
-					
-					// Make events clickable
-					eventEl.addEventListener('click', async () => {
-						await this.app.workspace.getLeaf().openFile(event.note);
-					});
+					// Process events for this day
+					for (const event of eventsForDay) {
+						// Create the event element
+						const eventEl = eventsContainer.createDiv({
+							cls: 'event-calendar-event'
+						});
+						
+						// Set the background color
+						eventEl.style.backgroundColor = event.color;
+						
+						// Add the event title
+						eventEl.createDiv({
+							cls: 'event-calendar-event-title',
+							text: event.title
+						});
+						
+						// Make events clickable
+						eventEl.addEventListener('click', async () => {
+							await this.app.workspace.getLeaf().openFile(event.note);
+						});
+					}
 				}
 			}
 		}
@@ -964,18 +940,14 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 	// Generate a set of rainbow colors
 	generateRainbowColors(count: number): string[] {
 		const colors: string[] = [];
-		
 		for (let i = 0; i < count; i++) {
 			// Calculate hue (0-360) to get full spectrum
 			const hue = (i * 360 / count) % 360;
-			
-			// Use more vibrant saturation and lightness for rainbow effect
-			const saturation = 95; // Increased from 90 for more vivid colors
-			const lightness = 60;  // Adjusted for better visibility and vibrancy
-			
+			// Use pastel colors by reducing saturation and increasing lightness
+			const saturation = 50; // Reduced saturation for pastel effect
+			const lightness = 85; // Increased lightness for pastel effect
 			colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
 		}
-		
 		return colors;
 	}
 
@@ -991,12 +963,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			cls: 'event-calendar-legend'
 		});
 		
-		legendContainer.createEl('h4', {
-			text: 'Legend',
-			cls: 'event-calendar-legend-title'
-		});
-		
-		// Get unique events by title
+		// Get unique events by title and sort them by start date
 		const uniqueEvents = new Map<string, Event>();
 		visibleEvents.forEach(event => {
 			if (!uniqueEvents.has(event.title)) {
@@ -1004,12 +971,17 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			}
 		});
 		
+		// Convert to array and sort by start date
+		const sortedEvents = Array.from(uniqueEvents.values()).sort((a, b) => {
+			return a.startDate.getTime() - b.startDate.getTime();
+		});
+		
 		// Create the legend items
 		const legendList = legendContainer.createDiv({
 			cls: 'event-calendar-legend-list'
 		});
 		
-		uniqueEvents.forEach(event => {
+		sortedEvents.forEach(event => {
 			const legendItem = legendList.createDiv({
 				cls: 'event-calendar-legend-item'
 			});
