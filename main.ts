@@ -3,14 +3,14 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 // Remember to rename these classes and interfaces!
 
 interface EventCalendarSettings {
-	defaultView: string; // 'month', 'year'
+	defaultView: string; // 'agenda', 'year'
 	firstDayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
 	debugMode: boolean; // Show debug information
 	testMode: boolean; // Enable test mode to show all notes and their metadata
 }
 
 const DEFAULT_SETTINGS: EventCalendarSettings = {
-	defaultView: 'month',
+	defaultView: 'agenda',
 	firstDayOfWeek: 0,
 	debugMode: false,
 	testMode: false
@@ -132,6 +132,7 @@ export default class EventCalendarPlugin extends Plugin {
 				position: relative;
 				width: calc(100% / 7);
 				box-sizing: border-box;
+				background: var(--background-primary);
 			}
 			.event-calendar-cell:last-child {
 				border-right: none;
@@ -168,10 +169,36 @@ export default class EventCalendarPlugin extends Plugin {
 			.event-calendar-event:hover {
 				filter: brightness(1.1);
 			}
+			.event-calendar-event-content {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.event-calendar-event-title {
+				flex-grow: 1;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.event-calendar-days-until {
+				font-size: 0.85em;
+				font-weight: bold;
+				background: rgba(0, 0, 0, 0.2);
+				padding: 1px 4px;
+				border-radius: 3px;
+				margin-left: 4px;
+				white-space: nowrap;
+			}
+			.event-calendar-empty-cell {
+				background: transparent;
+				border: none;
+				min-height: 0;
+				padding: 0;
+				width: 0;
+				flex: 0;
+			}
 			.other-month {
-				background: var(--background-modifier-cover);
-				color: var(--text-muted);
-				pointer-events: none; /* Remove hover effect */
+				display: none; /* Hide cells from other months */
 			}
 			
 			/* Year view styles */
@@ -279,8 +306,17 @@ export default class EventCalendarPlugin extends Plugin {
 				margin-right: 5px;
 				flex-shrink: 0;
 			}
+			.event-calendar-legend-content {
+				display: flex;
+				flex-direction: column;
+			}
 			.event-calendar-legend-label {
 				font-size: 0.9em;
+			}
+			.event-calendar-legend-days-until {
+				font-size: 0.75em;
+				font-weight: bold;
+				color: var(--text-muted);
 			}
 			
 			/* Debug styles */
@@ -517,157 +553,168 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			cls: 'event-calendar-nav-btn'
 		});
 		
+		// For agenda view, hide navigation buttons
+		if (this.plugin.settings.defaultView === 'agenda') {
+			prevBtn.style.visibility = 'hidden';
+			nextBtn.style.visibility = 'hidden';
+		}
+		
 		// Add view toggle button
 		const viewToggleBtn = navEl.createEl('button', {
-			text: this.plugin.settings.defaultView === 'month' ? 'Year View' : 'Month View',
+			text: this.plugin.settings.defaultView === 'agenda' ? 'Year View' : 'Agenda View',
 			cls: 'event-calendar-nav-btn event-calendar-view-toggle'
 		});
 		
-		// Navigation event handlers
-		prevBtn.addEventListener('click', () => {
-			if (this.plugin.settings.defaultView === 'month') {
-				this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() - 1, 1);
-			} else {
+		// Navigation event handlers only apply to year view
+		if (this.plugin.settings.defaultView !== 'agenda') {
+			prevBtn.addEventListener('click', () => {
 				this.monthDate = new Date(this.monthDate.getFullYear() - 1, 0, 1);
-			}
-			this.renderCalendar();
-		});
-		
-		nextBtn.addEventListener('click', () => {
-			if (this.plugin.settings.defaultView === 'month') {
-				this.monthDate = new Date(this.monthDate.getFullYear(), this.monthDate.getMonth() + 1, 1);
-			} else {
+				this.renderCalendar();
+			});
+			
+			nextBtn.addEventListener('click', () => {
 				this.monthDate = new Date(this.monthDate.getFullYear() + 1, 0, 1);
-			}
-			this.renderCalendar();
-		});
+				this.renderCalendar();
+			});
+		}
 		
 		// View toggle handler
 		viewToggleBtn.addEventListener('click', () => {
-			this.plugin.settings.defaultView = this.plugin.settings.defaultView === 'month' ? 'year' : 'month';
+			this.plugin.settings.defaultView = this.plugin.settings.defaultView === 'agenda' ? 'year' : 'agenda';
 			this.plugin.saveSettings();
 			this.renderCalendar();
 		});
 		
-		// Add the legend
-		this.renderLegend(calendarEl);
-		
 		// Render appropriate view
-		if (this.plugin.settings.defaultView === 'month') {
-			this.renderMonthGrid(calendarEl);
+		if (this.plugin.settings.defaultView === 'agenda') {
+			// Render agenda view without legend
+			this.renderAgendaView(calendarEl);
 		} else {
+			// Render year view first
 			this.renderYearGrid(calendarEl);
+			
+			// Then add the collapsible legend at the bottom
+			this.renderCollapsibleLegend(calendarEl);
 		}
 	}
 
 	formatCalendarTitle(): string {
-		if (this.plugin.settings.defaultView === 'month') {
-			return this.monthDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+		if (this.plugin.settings.defaultView === 'agenda') {
+			return 'Next 10 Events';
 		} else {
 			return this.monthDate.getFullYear().toString();
 		}
 	}
 
-	renderMonthGrid(containerEl: HTMLElement) {
-		const gridEl = containerEl.createDiv({
-			cls: 'event-calendar-grid'
+	renderAgendaView(containerEl: HTMLElement) {
+		// Create agenda container
+		const agendaEl = containerEl.createDiv({
+			cls: 'event-calendar-agenda'
 		});
 		
-		// Get the current month's days
-		const year = this.monthDate.getFullYear();
-		const month = this.monthDate.getMonth();
+		// Get today's date
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 		
-		// Create header row with day names
-		const headerRow = gridEl.createDiv({
-			cls: 'event-calendar-row event-calendar-header'
+		// Get all events
+		const allEvents = [...this.events];
+		
+		// Find upcoming and ongoing events
+		const upcomingEvents = allEvents.filter(event => {
+			const startDate = new Date(event.startDate);
+			startDate.setHours(0, 0, 0, 0);
+			return startDate.getTime() >= today.getTime();
 		});
 		
-		const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-		const firstDayOfWeek = this.plugin.settings.firstDayOfWeek;
+		const ongoingEvents = allEvents.filter(event => {
+			const startDate = new Date(event.startDate);
+			startDate.setHours(0, 0, 0, 0);
+			const endDate = event.endDate ? new Date(event.endDate) : startDate;
+			endDate.setHours(0, 0, 0, 0);
+			
+			return startDate.getTime() <= today.getTime() && endDate.getTime() >= today.getTime();
+		});
 		
-		for (let i = 0; i < 7; i++) {
-			const dayIndex = (i + firstDayOfWeek) % 7;
-			headerRow.createDiv({
-				cls: 'event-calendar-cell event-calendar-day-name',
-				text: dayNames[dayIndex]
+		// Combine events - ongoing first, then upcoming
+		const combinedEvents = [...ongoingEvents];
+		
+		// Sort upcoming by start date (closest first) and limit to 10-[ongoing count]
+		upcomingEvents.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+		combinedEvents.push(...upcomingEvents.slice(0, 10 - ongoingEvents.length));
+		
+		// If no events, show a message
+		if (combinedEvents.length === 0) {
+			agendaEl.createEl('p', {
+				text: 'No upcoming events scheduled.',
+				cls: 'event-calendar-agenda-empty'
 			});
+			return;
 		}
 		
-		// Calculate the first day to display
-		const firstDayOfMonth = new Date(year, month, 1);
-		let startDate = new Date(firstDayOfMonth);
-		const dayOfWeek = startDate.getDay();
+		// Create event list
+		const eventsList = agendaEl.createDiv({
+			cls: 'event-calendar-agenda-list'
+		});
 		
-		// Adjust to start on the correct first day of the week
-		const diff = (dayOfWeek - firstDayOfWeek + 7) % 7;
-		startDate.setDate(startDate.getDate() - diff);
-		
-		// Calculate the dates for all cells in the grid
-		const gridDates: Date[] = [];
-		for (let i = 0; i < 42; i++) { // 6 weeks × 7 days
-			const date = new Date(startDate);
-			date.setDate(startDate.getDate() + i);
-			gridDates.push(date);
-		}
-		
-		// Render 6 weeks to ensure we show all days
-		for (let week = 0; week < 6; week++) {
-			const row = gridEl.createDiv({
-				cls: 'event-calendar-row'
+		// Add each event to the list
+		combinedEvents.forEach(event => {
+			// Check if it's ongoing or upcoming
+			const startDate = new Date(event.startDate);
+			startDate.setHours(0, 0, 0, 0);
+			const isOngoing = startDate.getTime() <= today.getTime();
+			
+			const eventItem = eventsList.createDiv({
+				cls: isOngoing ? 'event-calendar-agenda-item event-calendar-agenda-ongoing-item' : 'event-calendar-agenda-item'
 			});
 			
-			for (let day = 0; day < 7; day++) {
-				const cellIndex = week * 7 + day;
-				const date = gridDates[cellIndex];
+			// Add colored event marker
+			const eventMarker = eventItem.createDiv({
+				cls: 'event-calendar-agenda-marker'
+			});
+			eventMarker.style.backgroundColor = event.color;
+			
+			// Create event content container
+			const eventContent = eventItem.createDiv({
+				cls: 'event-calendar-agenda-content'
+			});
+			
+			// Add event title
+			eventContent.createEl('div', {
+				text: event.title,
+				cls: 'event-calendar-agenda-title'
+			});
+			
+			// Add event dates
+			const dateText = event.endDate ? 
+				`${event.startDate.toLocaleDateString()} - ${event.endDate.toLocaleDateString()}` : 
+				event.startDate.toLocaleDateString();
 				
-				// Check if the date is in the current month
-				const isCurrentMonth = date.getMonth() === month;
-				
-				// Create the day cell
-				const dayCell = row.createDiv({
-					cls: `event-calendar-cell event-calendar-day${isCurrentMonth ? '' : ' other-month'}`
+			eventContent.createEl('div', {
+				text: dateText,
+				cls: 'event-calendar-agenda-date'
+			});
+			
+			// Add countdown for upcoming events or 'ongoing' badge
+			if (isOngoing) {
+				eventContent.createEl('div', {
+					text: 'Ongoing',
+					cls: 'event-calendar-agenda-ongoing'
 				});
-				
-				// Add the day number only if it's the current month
-				dayCell.createDiv({
-					cls: 'event-calendar-day-number',
-					text: isCurrentMonth ? date.getDate().toString() : '' // Hide day number for other months
-				});
-				
-				// Container for events
-				const eventsContainer = dayCell.createDiv({
-					cls: 'event-calendar-events'
-				});
-				
-				// Only process events if it's the current month
-				if (isCurrentMonth) {
-					// Get events for this day
-					const eventsForDay = this.getEventsForDay(date);
-					
-					// Process events for this day
-					for (const event of eventsForDay) {
-						// Create the event element
-						const eventEl = eventsContainer.createDiv({
-							cls: 'event-calendar-event'
-						});
-						
-						// Set the background color
-						eventEl.style.backgroundColor = event.color;
-						
-						// Add the event title
-						eventEl.createDiv({
-							cls: 'event-calendar-event-title',
-							text: event.title
-						});
-						
-						// Make events clickable
-						eventEl.addEventListener('click', async () => {
-							await this.app.workspace.getLeaf().openFile(event.note);
-						});
-					}
+			} else {
+				const daysUntil = this.getDaysUntilStart(event);
+				if (daysUntil > 0) {
+					eventContent.createEl('div', {
+						text: `${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`,
+						cls: 'event-calendar-agenda-countdown'
+					});
 				}
 			}
-		}
+			
+			// Make event clickable
+			eventItem.addEventListener('click', async () => {
+				await this.app.workspace.getLeaf().openFile(event.note);
+			});
+		});
 	}
 
 	getEventsForDay(day: Date): Event[] {
@@ -686,6 +733,20 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			return checkDate.getTime() >= startDate.getTime() && 
 				   checkDate.getTime() <= endDate.getTime();
 		});
+	}
+
+	// Calculate days remaining until event start
+	getDaysUntilStart(event: Event): number {
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		
+		const startDate = new Date(event.startDate);
+		startDate.setHours(0, 0, 0, 0);
+		
+		const timeDiff = startDate.getTime() - today.getTime();
+		const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+		
+		return daysDiff;
 	}
 
 	renderYearGrid(containerEl: HTMLElement) {
@@ -728,94 +789,117 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			cls: 'event-calendar-mini-grid'
 		});
 		
-		// Create header row with day names
-		const headerRow = gridEl.createDiv({
-			cls: 'event-calendar-mini-row event-calendar-mini-header'
-		});
-		
+		// Determine the day of week names based on first day of week setting
 		const dayNameAbbrev = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 		const firstDayOfWeek = this.plugin.settings.firstDayOfWeek;
 		
+		// Create header row with day names
 		for (let i = 0; i < 7; i++) {
 			const dayIndex = (i + firstDayOfWeek) % 7;
-			headerRow.createDiv({
+			gridEl.createDiv({
 				cls: 'event-calendar-mini-cell event-calendar-mini-day-name',
 				text: dayNameAbbrev[dayIndex]
 			});
 		}
 		
-		// Calculate the first day to display
+		// Get first day of the month
 		const firstDayOfMonth = new Date(year, month, 1);
-		let startDate = new Date(firstDayOfMonth);
-		const dayOfWeek = startDate.getDay();
-		
-		// Adjust to start on the correct first day of the week
-		const diff = (dayOfWeek - firstDayOfWeek + 7) % 7;
-		startDate.setDate(startDate.getDate() - diff);
-		
-		// Calculate days in month and last day of month
 		const daysInMonth = new Date(year, month + 1, 0).getDate();
 		
-		// Render weeks (at most 6)
-		let currentDate = new Date(startDate);
-		for (let week = 0; week < 6; week++) {
-			const row = gridEl.createDiv({
-				cls: 'event-calendar-mini-row'
+		// Calculate the first day's position in the week (0-6)
+		const firstDayPosition = (firstDayOfMonth.getDay() - firstDayOfWeek + 7) % 7;
+		
+		// Track which week we're in
+		let currentWeek = 0;
+		let currentDay = 0;
+		
+		// Create empty cells for days before the first of the month
+		for (let i = 0; i < firstDayPosition; i++) {
+			gridEl.createDiv({
+				cls: 'event-calendar-mini-cell event-calendar-mini-empty-cell'
+			});
+			currentDay++;
+		}
+		
+		// Create cells for each day in the month
+		for (let day = 1; day <= daysInMonth; day++) {
+			const date = new Date(year, month, day);
+			const dayCell = gridEl.createDiv({
+				cls: 'event-calendar-mini-cell'
 			});
 			
-			for (let day = 0; day < 7; day++) {
-				const isCurrentMonth = currentDate.getMonth() === month;
+			// Add the day number
+			dayCell.setText(day.toString());
+			
+			// Check if this day has events
+			const eventsForDay = this.getEventsForDay(date);
+			if (eventsForDay.length > 0) {
+				dayCell.addClass('event-calendar-mini-has-events');
 				
-				// Create the day cell
-				const dayCell = row.createDiv({
-					cls: 'event-calendar-mini-cell'
-				});
-				
-				// Only show content for days in the current month
-				if (isCurrentMonth) {
-					// Add the day number
-					dayCell.setText(currentDate.getDate().toString());
-					
-					// Check if this day has events
-					const eventsForDay = this.getEventsForDay(currentDate);
-					if (eventsForDay.length > 0) {
-						dayCell.addClass('event-calendar-mini-has-events');
-						
-						// Use the color of the first event for this day
-						if (eventsForDay[0].color) {
-							dayCell.style.backgroundColor = eventsForDay[0].color;
-						}
-						
-						// If multiple events, add a small indicator
-						if (eventsForDay.length > 1) {
-							dayCell.setAttribute('title', `${eventsForDay.length} events`);
-						} else {
-							dayCell.setAttribute('title', eventsForDay[0].title);
-						}
-					}
-					
-					// Make the cell clickable to switch to month view for this month
-					dayCell.addEventListener('click', () => {
-						this.monthDate = new Date(year, month, 1);
-						this.plugin.settings.defaultView = 'month';
-						this.plugin.saveSettings();
-						this.renderCalendar();
-					});
-				} else {
-					// For days not in current month, leave cell empty but maintain grid structure
-					dayCell.addClass('event-calendar-mini-empty-cell');
+				// Use the color of the first event for this day
+				if (eventsForDay[0].color) {
+					dayCell.style.backgroundColor = eventsForDay[0].color;
 				}
 				
-				// Move to next day
-				currentDate.setDate(currentDate.getDate() + 1);
+				// If multiple events, add a small indicator
+				if (eventsForDay.length > 1) {
+					dayCell.setAttribute('title', `${eventsForDay.length} events`);
+					
+					// Make click open the first event's note
+					dayCell.addEventListener('click', async (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						await this.app.workspace.getLeaf().openFile(eventsForDay[0].note);
+					});
+				} else {
+					const event = eventsForDay[0];
+					// Show days until in the tooltip if it's a future event
+					const today = new Date();
+					today.setHours(0, 0, 0, 0);
+					const eventStart = new Date(event.startDate);
+					eventStart.setHours(0, 0, 0, 0);
+					
+					if (eventStart.getTime() > today.getTime()) {
+						const daysUntil = this.getDaysUntilStart(event);
+						// Only show positive days
+						if (daysUntil > 0) {
+							dayCell.setAttribute('title', `${event.title} - ${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`);
+						} else {
+							dayCell.setAttribute('title', event.title);
+						}
+					} else {
+						dayCell.setAttribute('title', event.title);
+					}
+					
+					// Make click open the event's note
+					dayCell.addEventListener('click', async (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						await this.app.workspace.getLeaf().openFile(event.note);
+					});
+				}
+			} else {
+				// If no events, clicking still switches to agenda view
+				dayCell.addEventListener('click', () => {
+					this.monthDate = new Date(year, month, 1);
+					this.plugin.settings.defaultView = 'agenda';
+					this.plugin.saveSettings();
+					this.renderCalendar();
+				});
 			}
 			
-			// If we've gone past the end of the month and rendered at least 4 weeks
-			// we can stop to save space
-			if (currentDate.getMonth() !== month && week >= 3) {
-				break;
+			// Move to the next position
+			currentDay++;
+			
+			// Start a new week if needed
+			if (currentDay % 7 === 0) {
+				currentWeek++;
 			}
 		}
+		
+		// If we want to display a fixed number of weeks (usually 6)
+		// We can add empty cells for days after the end of the month
+		// But for now we'll leave it as is
 	}
 
 	renderDebugInfo() {
@@ -951,16 +1035,39 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		return colors;
 	}
 
-	// Render a legend showing all event types and their colors
-	renderLegend(containerEl: HTMLElement) {
+	// Render a collapsible legend at the bottom
+	renderCollapsibleLegend(containerEl: HTMLElement) {
 		// Get events for the current view
 		const visibleEvents = this.getVisibleEvents();
 		
 		// Skip legend if no events
 		if (visibleEvents.length === 0) return;
 		
+		// Create a collapsible container
 		const legendContainer = containerEl.createDiv({
-			cls: 'event-calendar-legend'
+			cls: 'event-calendar-legend event-calendar-legend-collapsible'
+		});
+		
+		// Create the header with collapse toggle
+		const legendHeader = legendContainer.createDiv({
+			cls: 'event-calendar-legend-header'
+		});
+		
+		// Add expand/collapse icon
+		const collapseIcon = legendHeader.createSpan({
+			cls: 'event-calendar-legend-collapse-icon'
+		});
+		collapseIcon.setText('▼');
+		
+		// Add title
+		legendHeader.createSpan({
+			text: 'Events Legend',
+			cls: 'event-calendar-legend-title'
+		});
+		
+		// Create the collapsible content
+		const legendContent = legendContainer.createDiv({
+			cls: 'event-calendar-legend-content-wrapper'
 		});
 		
 		// Get unique events by title and sort them by start date
@@ -977,9 +1084,13 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 		});
 		
 		// Create the legend items
-		const legendList = legendContainer.createDiv({
+		const legendList = legendContent.createDiv({
 			cls: 'event-calendar-legend-list'
 		});
+		
+		// Get today's date for time comparisons
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 		
 		sortedEvents.forEach(event => {
 			const legendItem = legendList.createDiv({
@@ -991,41 +1102,74 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			});
 			colorSwatch.style.backgroundColor = event.color;
 			
-			legendItem.createDiv({
+			const legendItemContent = legendItem.createDiv({
+				cls: 'event-calendar-legend-item-content'
+			});
+			
+			legendItemContent.createDiv({
 				text: event.title,
 				cls: 'event-calendar-legend-label'
 			});
+			
+			// Add days info: days until start or days since end
+			const eventStart = new Date(event.startDate);
+			eventStart.setHours(0, 0, 0, 0);
+			
+			if (eventStart.getTime() > today.getTime()) {
+				// Future event: show days until start
+				const daysUntil = this.getDaysUntilStart(event);
+				if (daysUntil > 0) {
+					legendItemContent.createDiv({
+						text: `${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`,
+						cls: 'event-calendar-legend-days-until'
+					});
+				}
+			} else {
+				// Past event or ongoing event
+				const eventEnd = event.endDate ? new Date(event.endDate) : new Date(eventStart);
+				eventEnd.setHours(0, 0, 0, 0);
+				
+				if (eventEnd.getTime() >= today.getTime()) {
+					// Ongoing event
+					legendItemContent.createDiv({
+						text: 'Ongoing',
+						cls: 'event-calendar-legend-ongoing'
+					});
+				} else {
+					// Past event: show days since end
+					const daysSince = Math.ceil((today.getTime() - eventEnd.getTime()) / (1000 * 3600 * 24));
+					legendItemContent.createDiv({
+						text: `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`,
+						cls: 'event-calendar-legend-days-ago'
+					});
+				}
+			}
 			
 			// Make clicking on legend items open the note
 			legendItem.addEventListener('click', async () => {
 				await this.app.workspace.getLeaf().openFile(event.note);
 			});
 		});
+		
+		// Toggle collapse on click
+		legendHeader.addEventListener('click', () => {
+			const isCollapsed = legendContent.hasClass('collapsed');
+			legendContent.toggleClass('collapsed', !isCollapsed);
+			collapseIcon.setText(isCollapsed ? '▼' : '▶');
+		});
+		
+		// Initialize as collapsed
+		legendContent.addClass('collapsed');
+		collapseIcon.setText('▶');
 	}
 	
-	// Get events visible in the current view (month or year)
+	// Get events visible in the current view (agenda or year)
 	getVisibleEvents(): Event[] {
 		let visibleEvents: Event[];
 		
-		if (this.plugin.settings.defaultView === 'month') {
-			// For month view, show only events in the currently displayed month
-			const year = this.monthDate.getFullYear();
-			const month = this.monthDate.getMonth();
-			
-			visibleEvents = this.events.filter(event => {
-				// Check if event start date or end date falls within this month
-				const startYear = event.startDate.getFullYear();
-				const startMonth = event.startDate.getMonth();
-				const endYear = event.endDate ? event.endDate.getFullYear() : startYear;
-				const endMonth = event.endDate ? event.endDate.getMonth() : startMonth;
-				
-				// Event is visible if any part of it falls within the displayed month
-				return (
-					// Start date is in this month or before, and end date is in this month or after
-					((startYear < year || (startYear === year && startMonth <= month)) && 
-					 (endYear > year || (endYear === year && endMonth >= month)))
-				);
-			});
+		if (this.plugin.settings.defaultView === 'agenda') {
+			// For agenda view, return all events - we'll filter them in renderAgendaView
+			visibleEvents = [...this.events];
 		} else {
 			// For year view, show only events in the currently displayed year
 			const year = this.monthDate.getFullYear();
@@ -1101,7 +1245,7 @@ class EventCalendarSettingTab extends PluginSettingTab {
 			.setName('Default view')
 			.setDesc('The default calendar view')
 			.addDropdown(dropdown => dropdown
-				.addOption('month', 'Month')
+				.addOption('agenda', 'Agenda')
 				.addOption('year', 'Year')
 				.setValue(this.plugin.settings.defaultView)
 				.onChange(async (value) => {

@@ -46,22 +46,16 @@ If your plugin does not need CSS, delete this file.
 .event-calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-}
-
-.event-calendar-row {
-    display: contents;
-}
-
-.event-calendar-header {
-    background-color: var(--background-secondary);
-    font-weight: bold;
+    background-color: var(--background-primary);
+    grid-auto-rows: minmax(80px, auto);
+    grid-auto-flow: row;
+    gap: 0;
 }
 
 .event-calendar-cell {
     border-right: 1px solid var(--background-modifier-border);
     border-bottom: 1px solid var(--background-modifier-border);
     padding: 5px;
-    min-height: 80px;
     position: relative;
 }
 
@@ -70,15 +64,12 @@ If your plugin does not need CSS, delete this file.
     padding: 8px 0;
     min-height: auto;
     font-size: 0.9em;
+    background-color: var(--background-secondary);
+    font-weight: bold;
 }
 
 .event-calendar-day {
     background-color: var(--background-primary);
-}
-
-.event-calendar-day.other-month {
-    background-color: var(--background-primary-alt);
-    color: var(--text-muted);
 }
 
 .event-calendar-day-number {
@@ -106,6 +97,29 @@ If your plugin does not need CSS, delete this file.
     white-space: nowrap;
 }
 
+.event-calendar-event-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.event-calendar-event-title {
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.event-calendar-days-until {
+    font-size: 0.85em;
+    font-weight: bold;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-left: 4px;
+    white-space: nowrap;
+}
+
 .event-calendar-event:hover {
     opacity: 0.9;
 }
@@ -116,6 +130,176 @@ If your plugin does not need CSS, delete this file.
     background-color: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 5px;
+}
+
+/* Year view styles */
+.event-calendar-year-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.event-calendar-year-row {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    width: 100%;
+}
+
+.event-calendar-year-month {
+    flex: 1;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 5px;
+    background: var(--background-primary);
+}
+
+.event-calendar-year-month-title {
+    text-align: center;
+    margin: 0 0 5px 0;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.event-calendar-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    background-color: var(--background-primary);
+    grid-auto-rows: minmax(16px, auto);
+    width: 100%;
+    gap: 1px;
+}
+
+.event-calendar-mini-cell {
+    text-align: center;
+    font-size: 0.65em;
+    padding: 2px 0;
+    cursor: pointer;
+    border-radius: 2px;
+    background-color: var(--background-primary-alt);
+}
+
+.event-calendar-mini-cell:hover {
+    background: var(--background-modifier-hover);
+}
+
+.event-calendar-mini-day-name {
+    font-weight: bold;
+    background-color: var(--background-secondary);
+    cursor: default;
+    font-size: 0.6em;
+    padding: 1px 0;
+}
+
+.event-calendar-mini-has-events {
+    background-color: var(--interactive-accent-hover);
+    color: var(--text-on-accent);
+    font-weight: bold;
+}
+
+.event-calendar-mini-empty-cell {
+    visibility: hidden;
+    background: transparent;
+    border: none;
+}
+
+/* Legend styles */
+.event-calendar-legend {
+    margin-top: 1em;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    background-color: var(--background-primary);
+}
+
+.event-calendar-legend-header {
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    background-color: var(--background-secondary-alt);
+    border-radius: 4px 4px 0 0;
+}
+
+.event-calendar-legend-header:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.event-calendar-legend-collapse-icon {
+    margin-right: 6px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.event-calendar-legend-title {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.event-calendar-legend-content-wrapper {
+    padding: 10px;
+    overflow: hidden;
+}
+
+.event-calendar-legend-content-wrapper.collapsed {
+    max-height: 0;
+    padding: 0;
+    border-top: none;
+}
+
+.event-calendar-legend-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+}
+
+.event-calendar-legend-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: var(--background-secondary-alt);
+    cursor: pointer;
+}
+
+.event-calendar-legend-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.event-calendar-legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 5px;
+    flex-shrink: 0;
+}
+
+.event-calendar-legend-item-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.event-calendar-legend-label {
+    font-size: 0.9em;
+}
+
+.event-calendar-legend-days-until {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: var(--text-accent);
+}
+
+.event-calendar-legend-days-ago {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: var(--text-muted);
+}
+
+.event-calendar-legend-ongoing {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: var(--text-success);
 }
 
 /* Debug Information Styles */
@@ -194,4 +378,96 @@ If your plugin does not need CSS, delete this file.
     background-color: var(--background-primary);
     border-radius: 4px;
     border: 1px solid var(--background-modifier-border);
+}
+
+/* Agenda View Styles */
+.event-calendar-agenda {
+    background-color: var(--background-primary);
+    border-radius: 5px;
+    padding: 10px;
+}
+
+.event-calendar-agenda-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.event-calendar-agenda-header {
+    margin: 10px 0;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    font-size: 1.1em;
+}
+
+.event-calendar-agenda-ongoing-header {
+    margin-top: 20px;
+    color: var(--text-accent-hover);
+}
+
+.event-calendar-agenda-list {
+    margin-bottom: 20px;
+}
+
+.event-calendar-agenda-item {
+    display: flex;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    background-color: var(--background-secondary-alt);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.event-calendar-agenda-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.event-calendar-agenda-ongoing-item {
+    background-color: var(--background-secondary);
+    border-left: 2px solid var(--text-accent-hover);
+}
+
+.event-calendar-agenda-marker {
+    width: 4px;
+    border-radius: 2px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.event-calendar-agenda-content {
+    flex-grow: 1;
+}
+
+.event-calendar-agenda-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.event-calendar-agenda-date {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.event-calendar-agenda-countdown {
+    display: inline-block;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: var(--text-accent);
+    padding: 2px 6px;
+    border-radius: 10px;
+    background-color: var(--background-modifier-border);
+}
+
+.event-calendar-agenda-ongoing {
+    display: inline-block;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: var(--text-accent-hover);
+    padding: 2px 6px;
+    border-radius: 10px;
+    background-color: var(--background-modifier-success);
 }

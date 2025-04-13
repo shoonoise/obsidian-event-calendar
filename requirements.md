@@ -18,4 +18,3 @@ MONTH
 ```
 
 When switching to preview/render mode, the plugin shows a calendar (e.g., a month view) with the matched events. Users should also be able to navigate between months.
-
