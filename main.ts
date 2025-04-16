@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, MarkdownRenderChild, MarkdownRenderer } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, MarkdownRenderChild, MarkdownRenderer, moment } from 'obsidian';
 
 // Remember to rename these classes and interfaces!
 
@@ -7,13 +7,15 @@ interface EventCalendarSettings {
 	firstDayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
 	debugMode: boolean; // Show debug information
 	testMode: boolean; // Enable test mode to show all notes and their metadata
+	compactAgendaView: boolean; // Use compact style for agenda view (single line per event)
 }
 
 const DEFAULT_SETTINGS: EventCalendarSettings = {
 	defaultView: 'agenda',
 	firstDayOfWeek: 0,
 	debugMode: false,
-	testMode: false
+	testMode: false,
+	compactAgendaView: false
 }
 
 interface Event {
@@ -312,6 +314,11 @@ export default class EventCalendarPlugin extends Plugin {
 			}
 			.event-calendar-legend-label {
 				font-size: 0.9em;
+			}
+			.event-calendar-legend-date {
+				font-size: 0.75em;
+				font-weight: bold;
+				color: var(--text-muted);
 			}
 			.event-calendar-legend-days-until {
 				font-size: 0.75em;
@@ -664,8 +671,15 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			const isOngoing = startDate.getTime() <= today.getTime();
 			
 			const eventItem = eventsList.createDiv({
-				cls: isOngoing ? 'event-calendar-agenda-item event-calendar-agenda-ongoing-item' : 'event-calendar-agenda-item'
+				cls: isOngoing 
+					? 'event-calendar-agenda-item event-calendar-agenda-ongoing-item' 
+					: 'event-calendar-agenda-item'
 			});
+			
+			// Add additional class if compact view is enabled
+			if (this.plugin.settings.compactAgendaView) {
+				eventItem.addClass('event-calendar-agenda-item-compact');
+			}
 			
 			// Add colored event marker
 			const eventMarker = eventItem.createDiv({
@@ -678,35 +692,81 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 				cls: 'event-calendar-agenda-content'
 			});
 			
-			// Add event title
-			eventContent.createEl('div', {
-				text: event.title,
-				cls: 'event-calendar-agenda-title'
-			});
-			
-			// Add event dates
-			const dateText = event.endDate ? 
-				`${event.startDate.toLocaleDateString()} - ${event.endDate.toLocaleDateString()}` : 
-				event.startDate.toLocaleDateString();
-				
-			eventContent.createEl('div', {
-				text: dateText,
-				cls: 'event-calendar-agenda-date'
-			});
-			
-			// Add countdown for upcoming events or 'ongoing' badge
-			if (isOngoing) {
-				eventContent.createEl('div', {
-					text: 'Ongoing',
-					cls: 'event-calendar-agenda-ongoing'
+			if (this.plugin.settings.compactAgendaView) {
+				// COMPACT VIEW: Show all information in a single line
+				const compactContent = eventContent.createDiv({
+					cls: 'event-calendar-agenda-compact-row'
 				});
-			} else {
-				const daysUntil = this.getDaysUntilStart(event);
-				if (daysUntil > 0) {
-					eventContent.createEl('div', {
-						text: `${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`,
-						cls: 'event-calendar-agenda-countdown'
+				
+				// Add event title
+				compactContent.createEl('span', {
+					text: event.title,
+					cls: 'event-calendar-agenda-title-compact'
+				});
+				
+				// Add bullet separator
+				compactContent.createEl('span', {
+					text: ' • ',
+					cls: 'event-calendar-agenda-separator'
+				});
+				
+				// Add event dates
+				const dateText = event.endDate ? 
+					`${moment(event.startDate).format('D MMM')} - ${moment(event.endDate).format('D MMM')}` : 
+					moment(event.startDate).format('D MMM');
+					
+				compactContent.createEl('span', {
+					text: dateText,
+					cls: 'event-calendar-agenda-date-compact'
+				});
+				
+				// Add status badge (ongoing or countdown)
+				if (isOngoing) {
+					compactContent.createEl('span', {
+						text: ' • Ongoing',
+						cls: 'event-calendar-agenda-ongoing-compact'
 					});
+				} else {
+					const daysUntil = this.getDaysUntilStart(event);
+					if (daysUntil > 0) {
+						compactContent.createEl('span', {
+							text: ` • ${this.getHumanizedDuration(event)}`,
+							cls: 'event-calendar-agenda-countdown-compact'
+						});
+					}
+				}
+			} else {
+				// NORMAL VIEW: Show information in multiple lines
+				// Add event title
+				eventContent.createEl('div', {
+					text: event.title,
+					cls: 'event-calendar-agenda-title'
+				});
+				
+				// Add event dates
+				const dateText = event.endDate ? 
+					`${moment(event.startDate).format('D MMM')} - ${moment(event.endDate).format('D MMM')}` : 
+					moment(event.startDate).format('D MMM');
+					
+				eventContent.createEl('div', {
+					text: dateText,
+					cls: 'event-calendar-agenda-date'
+				});
+				
+				// Add countdown for upcoming events or 'ongoing' badge
+				if (isOngoing) {
+					eventContent.createEl('div', {
+						text: 'Ongoing',
+						cls: 'event-calendar-agenda-ongoing'
+					});
+				} else {
+					const daysUntil = this.getDaysUntilStart(event);
+					if (daysUntil > 0) {
+						eventContent.createEl('div', {
+							text: this.getHumanizedDuration(event),
+							cls: 'event-calendar-agenda-countdown'
+						});
+					}
 				}
 			}
 			
@@ -733,6 +793,15 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 			return checkDate.getTime() >= startDate.getTime() && 
 				   checkDate.getTime() <= endDate.getTime();
 		});
+	}
+
+	// Get humanized time duration for events
+	getHumanizedDuration(event: Event): string {
+		const daysUntil = this.getDaysUntilStart(event);
+		if (daysUntil <= 0) return '';
+		
+		// Use moment.js to get a humanized duration
+		return moment.duration(daysUntil, 'days').humanize(true);
 	}
 
 	// Calculate days remaining until event start
@@ -863,12 +932,12 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 						const daysUntil = this.getDaysUntilStart(event);
 						// Only show positive days
 						if (daysUntil > 0) {
-							dayCell.setAttribute('title', `${event.title} - ${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`);
+							dayCell.setAttribute('title', `${event.title} - ${this.getHumanizedDuration(event)} (${moment(event.startDate).format('D MMM')})`);
 						} else {
-							dayCell.setAttribute('title', event.title);
+							dayCell.setAttribute('title', `${event.title} (${moment(event.startDate).format('D MMM')})`);
 						}
 					} else {
-						dayCell.setAttribute('title', event.title);
+						dayCell.setAttribute('title', `${event.title} (${moment(event.startDate).format('D MMM')})`);
 					}
 					
 					// Make click open the event's note
@@ -1014,7 +1083,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 					cls: 'event-calendar-debug-event-name'
 				});
 				li.createEl('span', {
-					text: ` (${event.startDate.toLocaleDateString()} - ${event.endDate?.toLocaleDateString() || 'N/A'})`,
+					text: ` (${moment(event.startDate).format('D MMM')} - ${event.endDate ? moment(event.endDate).format('D MMM') : 'N/A'})`,
 					cls: 'event-calendar-debug-event-dates'
 				});
 			}
@@ -1111,6 +1180,12 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 				cls: 'event-calendar-legend-label'
 			});
 			
+			// Add date info
+			legendItemContent.createDiv({
+				text: event.endDate ? `${moment(event.startDate).format('D MMM')} - ${moment(event.endDate).format('D MMM')}` : moment(event.startDate).format('D MMM'),
+				cls: 'event-calendar-legend-date'
+			});
+			
 			// Add days info: days until start or days since end
 			const eventStart = new Date(event.startDate);
 			eventStart.setHours(0, 0, 0, 0);
@@ -1120,7 +1195,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 				const daysUntil = this.getDaysUntilStart(event);
 				if (daysUntil > 0) {
 					legendItemContent.createDiv({
-						text: `${daysUntil} day${daysUntil !== 1 ? 's' : ''} until start`,
+						text: this.getHumanizedDuration(event),
 						cls: 'event-calendar-legend-days-until'
 					});
 				}
@@ -1139,7 +1214,7 @@ class EventCalendarRenderer extends MarkdownRenderChild {
 					// Past event: show days since end
 					const daysSince = Math.ceil((today.getTime() - eventEnd.getTime()) / (1000 * 3600 * 24));
 					legendItemContent.createDiv({
-						text: `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`,
+						text: moment.duration(daysSince, 'days').humanize(true) + ' ago',
 						cls: 'event-calendar-legend-days-ago'
 					});
 				}
@@ -1282,6 +1357,16 @@ class EventCalendarSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.testMode)
 				.onChange(async (value) => {
 					this.plugin.settings.testMode = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Compact Agenda View')
+			.setDesc('Use compact style for agenda view (single line per event)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.compactAgendaView)
+				.onChange(async (value) => {
+					this.plugin.settings.compactAgendaView = value;
 					await this.plugin.saveSettings();
 				}));
 	}

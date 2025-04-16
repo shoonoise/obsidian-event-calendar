@@ -284,6 +284,11 @@ If your plugin does not need CSS, delete this file.
     font-size: 0.9em;
 }
 
+.event-calendar-legend-date {
+    font-size: 0.75em;
+    color: var(--text-muted);
+}
+
 .event-calendar-legend-days-until {
     font-size: 0.75em;
     font-weight: bold;
@@ -470,4 +475,52 @@ If your plugin does not need CSS, delete this file.
     padding: 2px 6px;
     border-radius: 10px;
     background-color: var(--background-modifier-success);
+}
+
+/* Compact Agenda View Styles */
+.event-calendar-agenda-item-compact {
+    padding: 6px 10px;
+    margin-bottom: 4px;
+}
+
+.event-calendar-agenda-compact-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.event-calendar-agenda-title-compact {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.event-calendar-agenda-date-compact {
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.event-calendar-agenda-separator {
+    color: var(--text-muted);
+}
+
+.event-calendar-agenda-countdown-compact {
+    color: var(--text-accent);
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.event-calendar-agenda-ongoing-compact {
+    color: var(--text-accent-hover);
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+/* Adjust marker for compact view */
+.event-calendar-agenda-item-compact .event-calendar-agenda-marker {
+    align-self: center;
+    height: 100%;
+    min-height: 20px;
 }
